@@ -121,36 +121,18 @@ export class PostgresStorage implements Storage {
 
     await this.ensureConnected();
 
-    async function asyncForEach(
-      array: any[],
-      callback: {
-        (key: string): Promise<void>;
-        (arg0: any, arg1: number, arg2: any[]): void;
-      }
-    ) {
-      for (let index: number = 0; index < array.length; index++) {
-        await callback(array[index], index, array);
-      }
-    }
+    const table = PostgresStoreItem.tableName;
+    const replacements: { [key: string]: string } = {};
+    const rows = Object.keys(changes).map((key: string, index: number) => {
+      replacements[`id${index}`] = key;
+      replacements[`data${index}`] = JSON.stringify(changes[key]);
+      return `(:id${index}, :data${index})`;
+    });
+    const query = `INSERT INTO ${table} (id, data) 
+        VALUES ${rows.join(", ")} 
+        ON CONFLICT (id) DO UPDATE SET data = ${table}.data || EXCLUDED.data`;
 
-    const writeAsync = async () => {
-      await asyncForEach(
-        Object.keys(changes),
-        async (key: string): Promise<void> => {
-          const query = `INSERT INTO ${PostgresStoreItem.tableName} (id, data) 
-        VALUES (:id, :data) 
-        ON CONFLICT (id) DO UPDATE SET data = ${PostgresStoreItem.tableName}.data || :data`;
-          await this.connection.query(query, {
-            replacements: {
-              id: key,
-              data: JSON.stringify(changes[key])
-            }
-          });
-        }
-      );
-    };
-
-    writeAsync();
+    this.connection.query(query, { replacements });
   }
 
   public async delete(keys: string[]): Promise<void> {
