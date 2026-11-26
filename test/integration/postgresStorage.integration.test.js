@@ -78,10 +78,21 @@ describe("PostgresStorage integration tests", function() {
       await storage.write({ [existing]: { kept: 1, replaced: "old" } });
       await waitFor(async () => Object.keys(await storage.read([existing])).length === 1);
 
-      await storage.write({
-        [fresh]: { created: true },
-        [existing]: { replaced: "new", added: [1, 2] }
-      });
+      const query = storage.connection.query;
+      let queries = 0;
+      storage.connection.query = function() {
+        queries++;
+        return query.apply(this, arguments);
+      };
+      try {
+        await storage.write({
+          [fresh]: { created: true },
+          [existing]: { replaced: "new", added: [1, 2] }
+        });
+      } finally {
+        storage.connection.query = query;
+      }
+      assert.equal(queries, 1);
       const expected = {
         [existing]: { kept: 1, replaced: "new", added: [1, 2] },
         [fresh]: { created: true }
