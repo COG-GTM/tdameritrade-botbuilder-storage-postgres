@@ -6,7 +6,7 @@
  ***********************************************************************************/
 
 const assert = require("assert");
-const { inspect } = require("util");
+const { inspect, isDeepStrictEqual } = require("util");
 const { PostgresStorage } = require("../../lib/PostgresStorage");
 
 //require Op, Sequelize for querying operations
@@ -89,7 +89,7 @@ describe("PostgresStorage integration tests", function() {
       let actual;
       await waitFor(async () => {
         actual = await storage.read([existing, fresh]);
-        return JSON.stringify(actual[existing]) === JSON.stringify(expected[existing]) && !!actual[fresh];
+        return isDeepStrictEqual(actual, expected);
       });
       assert.deepEqual(actual, expected);
     });
