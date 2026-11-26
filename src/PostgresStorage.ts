@@ -123,14 +123,16 @@ export class PostgresStorage implements Storage {
 
     const table = PostgresStoreItem.tableName;
     const replacements: { [key: string]: string } = {};
-    const rows = Object.keys(changes).map((key: string, index: number) => {
-      replacements[`id${index}`] = key;
-      replacements[`data${index}`] = JSON.stringify(changes[key]);
-      return `(:id${index}, :data${index})`;
-    });
-    const query = `INSERT INTO ${table} (id, data) 
+    const rows = Object.keys(changes)
+      .sort()
+      .map((key: string, index: number) => {
+        replacements[`id${index}`] = key;
+        replacements[`data${index}`] = JSON.stringify(changes[key]);
+        return `(:id${index}, :data${index})`;
+      });
+    const query = `INSERT INTO ${table} AS existing (id, data) 
         VALUES ${rows.join(", ")} 
-        ON CONFLICT (id) DO UPDATE SET data = ${table}.data || EXCLUDED.data`;
+        ON CONFLICT (id) DO UPDATE SET data = existing.data || EXCLUDED.data`;
 
     this.connection.query(query, { replacements });
   }
