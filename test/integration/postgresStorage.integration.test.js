@@ -6,7 +6,7 @@
  ***********************************************************************************/
 
 const assert = require("assert");
-const { inspect } = require("util");
+const { inspect, isDeepStrictEqual } = require("util");
 const { PostgresStorage } = require("../../lib/PostgresStorage");
 
 //require Op, Sequelize for querying operations
@@ -32,6 +32,15 @@ describe("PostgresStorage integration tests", function() {
         state: Math.random() * 1000000
       }
     };
+  }
+
+  async function waitFor(condition) {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (await condition()) {
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
   }
 
   function idOf(changesObject) {
@@ -60,6 +69,40 @@ describe("PostgresStorage integration tests", function() {
       const actual = await storage.read([idOf(subject)]);
       //assert.equal(actual.state, contentOf(subject).state);
       assert.equal(idOf(actual), idOf(subject));
+    });
+
+    it("should insert new keys and merge existing keys in one write", async function() {
+      const suffix = `${Date.now()}-${Math.random()}`;
+      const existing = `multi-existing-${suffix}`;
+      const fresh = `multi-fresh-${suffix}`;
+      await storage.write({ [existing]: { kept: 1, replaced: "old" } });
+      await waitFor(async () => Object.keys(await storage.read([existing])).length === 1);
+
+      const query = storage.connection.query;
+      let queries = 0;
+      storage.connection.query = function() {
+        queries++;
+        return query.apply(this, arguments);
+      };
+      try {
+        await storage.write({
+          [fresh]: { created: true },
+          [existing]: { replaced: "new", added: [1, 2] }
+        });
+      } finally {
+        storage.connection.query = query;
+      }
+      assert.equal(queries, 1);
+      const expected = {
+        [existing]: { kept: 1, replaced: "new", added: [1, 2] },
+        [fresh]: { created: true }
+      };
+      let actual;
+      await waitFor(async () => {
+        actual = await storage.read([existing, fresh]);
+        return isDeepStrictEqual(actual, expected);
+      });
+      assert.deepEqual(actual, expected);
     });
   });
 
