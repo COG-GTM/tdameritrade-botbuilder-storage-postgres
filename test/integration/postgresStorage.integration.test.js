@@ -34,6 +34,15 @@ describe("PostgresStorage integration tests", function() {
     };
   }
 
+  async function waitFor(condition) {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (await condition()) {
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+  }
+
   function idOf(changesObject) {
     return Object.keys(changesObject)[0];
   }
@@ -60,6 +69,29 @@ describe("PostgresStorage integration tests", function() {
       const actual = await storage.read([idOf(subject)]);
       //assert.equal(actual.state, contentOf(subject).state);
       assert.equal(idOf(actual), idOf(subject));
+    });
+
+    it("should insert new keys and merge existing keys in one write", async function() {
+      const suffix = `${Date.now()}-${Math.random()}`;
+      const existing = `multi-existing-${suffix}`;
+      const fresh = `multi-fresh-${suffix}`;
+      await storage.write({ [existing]: { kept: 1, replaced: "old" } });
+      await waitFor(async () => Object.keys(await storage.read([existing])).length === 1);
+
+      await storage.write({
+        [fresh]: { created: true },
+        [existing]: { replaced: "new", added: [1, 2] }
+      });
+      const expected = {
+        [existing]: { kept: 1, replaced: "new", added: [1, 2] },
+        [fresh]: { created: true }
+      };
+      let actual;
+      await waitFor(async () => {
+        actual = await storage.read([existing, fresh]);
+        return JSON.stringify(actual[existing]) === JSON.stringify(expected[existing]) && !!actual[fresh];
+      });
+      assert.deepEqual(actual, expected);
     });
   });
 
